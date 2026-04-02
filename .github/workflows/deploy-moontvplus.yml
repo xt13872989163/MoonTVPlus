@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - custom
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发开关（保留）
 
 jobs:
   deploy:
@@ -23,13 +23,13 @@ jobs:
             mkdir -p $TARGET/config
             cd $TARGET
 
-            # 拉取最新代码
+            # 🔥 修复：只更新代码，不删除 config 配置（保留你的账号密码）
             git init
-            git remote add origin https://github.com/xt13872989163/MoonTVPlus.git
+            git remote set-url origin https://github.com/xt13872989163/MoonTVPlus.git || git remote add origin https://github.com/xt13872989163/MoonTVPlus.git
             git fetch origin
             git checkout custom -f
 
-            # 重启服务
+            # 启动服务
             docker compose down
             docker compose up -d
             docker image prune -f
