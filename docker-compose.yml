@@ -1,21 +1,21 @@
 services:
   moontv-core:
-    image: ghcr.io/mtvpls/moontvplus:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: moontv-core
     restart: on-failure
     ports:
-      - '3000:3000'
-    volumes:
-      - ./config:/app/config
+      - "3000:3000"
     environment:
-      - PASSWORD=${PASSWORD}
+      - PASSWORD=${PASSWORD:?PASSWORD is required}
       - NEXT_PUBLIC_STORAGE_TYPE=kvrocks
       - KVROCKS_URL=redis://moontv-kvrocks:6666
-    networks:
-      - moontv-network
     depends_on:
       - moontv-kvrocks
-      
+    networks:
+      - moontv-network
+
   moontv-kvrocks:
     image: apache/kvrocks
     container_name: moontv-kvrocks
@@ -24,9 +24,10 @@ services:
       - kvrocks-data:/var/lib/kvrocks/data
     networks:
       - moontv-network
-      
+
 networks:
   moontv-network:
     driver: bridge
+
 volumes:
   kvrocks-data:
