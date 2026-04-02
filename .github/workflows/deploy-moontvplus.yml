@@ -66,14 +66,14 @@ jobs:
             REPO_URL="https://github.com/xt13872989163/MoonTVPlus.git"
             BRANCH="custom"
 
-            echo "[1/6] 检查远程环境变量"
+            echo "[1/7] 检查远程环境变量"
             : "${MOONTV_PASSWORD:?MOONTV_PASSWORD is not available on remote shell}"
 
-            echo "[2/6] 准备部署目录"
+            echo "[2/7] 准备部署目录"
             mkdir -p "$TARGET/config"
             cd "$TARGET"
 
-            echo "[3/6] 同步仓库"
+            echo "[3/7] 初始化仓库"
             if [ ! -d .git ]; then
               git init
               git remote add origin "$REPO_URL"
@@ -81,24 +81,26 @@ jobs:
               git remote set-url origin "$REPO_URL"
             fi
 
+            echo "[4/7] 同步远端代码"
             git fetch --depth=1 origin "$BRANCH"
-            git checkout -B "$BRANCH" "origin/$BRANCH"
+            git checkout -B "$BRANCH"
+            git reset --hard "origin/$BRANCH"
 
-            echo "[4/6] 生成临时运行时环境文件"
+            echo "[5/7] 生成运行时环境文件"
             umask 077
             printf 'PASSWORD=%s\n' "$MOONTV_PASSWORD" > .env.runtime
 
-            echo "[5/6] 校验 compose 配置"
+            echo "[6/7] 校验并启动容器"
             docker compose --env-file .env.runtime config >/dev/null
-
-            echo "[6/6] 重启服务"
             docker compose --env-file .env.runtime down || true
             docker compose --env-file .env.runtime up -d --build
             docker image prune -f
 
+            echo "[7/7] 清理临时文件"
             rm -f .env.runtime
 
             echo "====================================="
             echo "部署完成"
             echo "访问地址: http://${{ secrets.SSH_HOST }}:3000"
+            echo "配置文件: /opt/moontv/config/settings.json"
             echo "====================================="
