@@ -1,0 +1,106 @@
+name: Deploy MoonTVPlus
+
+on:
+  push:
+    branches:
+      - custom
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 检查 Secrets 是否存在
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          MOONTV_USERNAME: ${{ secrets.MOONTV_USERNAME }}
+          MOONTV_PASSWORD: ${{ secrets.MOONTV_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST}" ] || (echo "Missing secret: SSH_HOST" && exit 1)
+          [ -n "${SSH_USER}" ] || (echo "Missing secret: SSH_USER" && exit 1)
+          [ -n "${SSH_PRIVATE_KEY}" ] || (echo "Missing secret: SSH_PRIVATE_KEY" && exit 1)
+          [ -n "${MOONTV_USERNAME}" ] || (echo "Missing secret: MOONTV_USERNAME" && exit 1)
+          [ -n "${MOONTV_PASSWORD}" ] || (echo "Missing secret: MOONTV_PASSWORD" && exit 1)
+
+      - name: SSH 预检
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script_stop: true
+          command_timeout: 60s
+          script: |
+            set -euo pipefail
+            whoami
+            hostname
+            pwd
+
+      - name: 自动部署到服务器
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          MOONTV_USERNAME: ${{ secrets.MOONTV_USERNAME }}
+          MOONTV_PASSWORD: ${{ secrets.MOONTV_PASSWORD }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          envs: MOONTV_USERNAME,MOONTV_PASSWORD
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            set -Eeuo pipefail
+            trap 'code=$?; echo "Failed command: $BASH_COMMAND"; exit $code' ERR
+
+            TARGET="/opt/moontv"
+            REPO_URL="https://github.com/xt13872989163/MoonTVPlus.git"
+            BRANCH="custom"
+
+            echo "[1/6] 检查环境变量"
+            : "${MOONTV_USERNAME:?MOONTV_USERNAME is not available on remote shell}"
+            : "${MOONTV_PASSWORD:?MOONTV_PASSWORD is not available on remote shell}"
+
+            echo "[2/6] 停止旧服务"
+            if [ -f "$TARGET/docker-compose.yml" ]; then
+              cd "$TARGET"
+              docker compose --env-file .env.runtime down || true
+            fi
+
+            echo "[3/6] 准备目录"
+            mkdir -p "$TARGET"
+
+            echo "[4/6] 清空目录并拉取最新代码"
+            find "$TARGET" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            git clone --depth=1 -b "$BRANCH" "$REPO_URL" "$TARGET"
+
+            echo "[5/6] 生成运行时环境文件"
+            umask 077
+            {
+              printf 'MOONTV_USERNAME=%s\n' "$MOONTV_USERNAME"
+              printf 'MOONTV_PASSWORD=%s\n' "$MOONTV_PASSWORD"
+            } > "$TARGET/.env.runtime"
+
+            echo "[6/6] 拉取最新镜像并启动"
+            cd "$TARGET"
+            docker compose --env-file .env.runtime config >/dev/null
+            docker compose --env-file .env.runtime pull
+            docker compose --env-file .env.runtime up -d --force-recreate
+            docker image prune -f
+            rm -f "$TARGET/.env.runtime"
+
+            echo "====================================="
+            echo "部署完成"
+            echo "访问地址: http://${{ secrets.SSH_HOST }}:3000"
+            echo "====================================="
