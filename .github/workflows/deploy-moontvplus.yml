@@ -11,9 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    env:
-      SSH_PORT: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || '22' }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -31,13 +28,13 @@ jobs:
           [ -n "${SSH_PRIVATE_KEY}" ] || (echo "Missing secret: SSH_PRIVATE_KEY" && exit 1)
           [ -n "${MOONTV_PASSWORD}" ] || (echo "Missing secret: MOONTV_PASSWORD" && exit 1)
 
-      - name: SSH 预检（只验证连通和认证）
+      - name: SSH 预检
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ env.SSH_PORT }}
+          port: 22
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           debug: true
           script_stop: true
@@ -56,21 +53,27 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ env.SSH_PORT }}
+          port: 22
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           envs: MOONTV_PASSWORD
           script_stop: true
           command_timeout: 15m
           script: |
-            set -euo pipefail
+            set -Eeuo pipefail
+            trap 'code=$?; echo "Failed command: $BASH_COMMAND"; exit $code' ERR
 
             TARGET="/opt/moontv"
             REPO_URL="https://github.com/xt13872989163/MoonTVPlus.git"
             BRANCH="custom"
 
+            echo "[1/6] 检查远程环境变量"
+            : "${MOONTV_PASSWORD:?MOONTV_PASSWORD is not available on remote shell}"
+
+            echo "[2/6] 准备部署目录"
             mkdir -p "$TARGET/config"
             cd "$TARGET"
 
+            echo "[3/6] 同步仓库"
             if [ ! -d .git ]; then
               git init
               git remote add origin "$REPO_URL"
@@ -81,14 +84,21 @@ jobs:
             git fetch --depth=1 origin "$BRANCH"
             git checkout -B "$BRANCH" "origin/$BRANCH"
 
-            export PASSWORD="$MOONTV_PASSWORD"
+            echo "[4/6] 生成临时运行时环境文件"
+            umask 077
+            printf 'PASSWORD=%s\n' "$MOONTV_PASSWORD" > .env.runtime
 
-            docker compose down
-            docker compose up -d --build
+            echo "[5/6] 校验 compose 配置"
+            docker compose --env-file .env.runtime config >/dev/null
+
+            echo "[6/6] 重启服务"
+            docker compose --env-file .env.runtime down || true
+            docker compose --env-file .env.runtime up -d --build
             docker image prune -f
+
+            rm -f .env.runtime
 
             echo "====================================="
             echo "部署完成"
             echo "访问地址: http://${{ secrets.SSH_HOST }}:3000"
-            echo "配置文件: /opt/moontv/config/settings.json"
             echo "====================================="
