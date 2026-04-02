@@ -18,13 +18,17 @@ jobs:
         shell: bash
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          MOONTV_PASSWORD: ${{ secrets.MOONTV_PASSWORD }}
         run: |
           set -euo pipefail
           [ -n "${SSH_HOST}" ] || (echo "Missing secret: SSH_HOST" && exit 1)
+          [ -n "${SSH_PORT}" ] || (echo "Missing secret: SSH_PORT" && exit 1)
           [ -n "${SSH_USER}" ] || (echo "Missing secret: SSH_USER" && exit 1)
           [ -n "${SSH_PRIVATE_KEY}" ] || (echo "Missing secret: SSH_PRIVATE_KEY" && exit 1)
+          [ -n "${MOONTV_PASSWORD}" ] || (echo "Missing secret: MOONTV_PASSWORD" && exit 1)
 
       - name: SSH 预检（只验证连通和认证）
         uses: appleboy/ssh-action@v1.0.3
@@ -45,31 +49,44 @@ jobs:
 
       - name: 自动部署到服务器
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          MOONTV_PASSWORD: ${{ secrets.MOONTV_PASSWORD }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          envs: MOONTV_PASSWORD
           script_stop: true
           command_timeout: 15m
           script: |
             set -euo pipefail
+
             TARGET="/opt/moontv"
+            REPO_URL="https://github.com/xt13872989163/MoonTVPlus.git"
+            BRANCH="custom"
+
             mkdir -p "$TARGET/config"
             cd "$TARGET"
 
-            git init
-            git remote set-url origin https://github.com/xt13872989163/MoonTVPlus.git || git remote add origin https://github.com/xt13872989163/MoonTVPlus.git
-            git fetch --depth=1 origin custom
-            git checkout -B custom origin/custom
+            if [ ! -d .git ]; then
+              git init
+              git remote add origin "$REPO_URL"
+            else
+              git remote set-url origin "$REPO_URL"
+            fi
+
+            git fetch --depth=1 origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+
+            export PASSWORD="$MOONTV_PASSWORD"
 
             docker compose down
             docker compose up -d --build
             docker image prune -f
 
             echo "====================================="
-            echo "✅ 部署完成！"
-            echo "🌐 访问地址：http://${{ secrets.SSH_HOST }}:3000"
-            echo "📁 配置文件：/opt/moontv/config/settings.json"
+            echo "部署完成"
+            echo "访问地址: http://${{ secrets.SSH_HOST }}:3000"
             echo "====================================="
