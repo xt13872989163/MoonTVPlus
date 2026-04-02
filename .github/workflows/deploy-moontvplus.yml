@@ -9,7 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          debug: true
           script_stop: true
           command_timeout: 60s
           script: |
@@ -57,7 +56,7 @@ jobs:
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           envs: MOONTV_PASSWORD
           script_stop: true
-          command_timeout: 20m
+          command_timeout: 35m
           script: |
             set -Eeuo pipefail
             trap 'code=$?; echo "Failed command: $BASH_COMMAND"; exit $code' ERR
@@ -66,32 +65,39 @@ jobs:
             REPO_URL="https://github.com/xt13872989163/MoonTVPlus.git"
             BRANCH="custom"
 
-            echo "[1/7] 检查环境变量"
+            echo "[1/9] 检查环境变量"
             : "${MOONTV_PASSWORD:?MOONTV_PASSWORD is not available on remote shell}"
 
-            echo "[2/7] 准备部署目录"
+            echo "[2/9] 停止旧服务"
+            if [ -f "$TARGET/docker-compose.yml" ]; then
+              cd "$TARGET"
+              docker compose --env-file .env.runtime down || true
+            fi
+
+            echo "[3/9] 准备目录"
             mkdir -p "$TARGET"
-            cd "$TARGET"
 
-            echo "[3/7] 停止旧容器"
-            docker compose down || true
-
-            echo "[4/7] 清空目录"
+            echo "[4/9] 清空目录"
             find "$TARGET" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
-            echo "[5/7] 拉取最新代码"
+            echo "[5/9] 拉取最新源码"
             git clone --depth=1 -b "$BRANCH" "$REPO_URL" "$TARGET"
 
-            echo "[6/7] 生成运行时环境文件"
+            echo "[6/9] 写入运行时环境文件"
             umask 077
             printf 'PASSWORD=%s\n' "$MOONTV_PASSWORD" > "$TARGET/.env.runtime"
 
-            echo "[7/7] 启动服务"
+            echo "[7/9] 校验 compose"
             cd "$TARGET"
             docker compose --env-file .env.runtime config >/dev/null
-            docker compose --env-file .env.runtime up -d --build
+
+            echo "[8/9] 构建并启动"
+            docker compose --env-file .env.runtime build --no-cache
+            docker compose --env-file .env.runtime up -d --force-recreate
+
+            echo "[9/9] 校验 PASSWORD 已进入容器"
+            docker inspect moontv-core --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^PASSWORD=' >/dev/null
             docker image prune -f
-            rm -f "$TARGET/.env.runtime"
 
             echo "====================================="
             echo "部署完成"
