@@ -1,15 +1,47 @@
 name: Deploy MoonTVPlus
+
 on:
   push:
     branches:
       - custom
-  workflow_dispatch:  # 手动触发开关（保留）
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: 检查 Secrets 是否存在
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST}" ] || (echo "Missing secret: SSH_HOST" && exit 1)
+          [ -n "${SSH_USER}" ] || (echo "Missing secret: SSH_USER" && exit 1)
+          [ -n "${SSH_PRIVATE_KEY}" ] || (echo "Missing secret: SSH_PRIVATE_KEY" && exit 1)
+
+      - name: SSH 预检（只验证连通和认证）
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          debug: true
+          script_stop: true
+          command_timeout: 60s
+          script: |
+            set -euo pipefail
+            whoami
+            hostname
+            pwd
 
       - name: 自动部署到服务器
         uses: appleboy/ssh-action@v1.0.3
@@ -17,21 +49,23 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script_stop: true
+          command_timeout: 15m
           script: |
             set -euo pipefail
             TARGET="/opt/moontv"
-            mkdir -p $TARGET/config
-            cd $TARGET
+            mkdir -p "$TARGET/config"
+            cd "$TARGET"
 
-            # 🔥 修复：只更新代码，不删除 config 配置（保留你的账号密码）
             git init
             git remote set-url origin https://github.com/xt13872989163/MoonTVPlus.git || git remote add origin https://github.com/xt13872989163/MoonTVPlus.git
-            git fetch origin
-            git checkout custom -f
+            git fetch --depth=1 origin custom
+            git checkout -B custom origin/custom
 
-            # 启动服务
             docker compose down
-            docker compose up -d
+            docker compose up -d --build
             docker image prune -f
 
             echo "====================================="
