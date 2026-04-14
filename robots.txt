@@ -3,6 +3,6 @@ Allow: /
 Disallow: /admin/
 Disallow: /api/internal/
 Disallow: /tmp/
-
 User-agent: Googlebot
 Allow: /
+Sitemap: https://www.godshan.cloud/sitemap.xml
