@@ -5,6 +5,8 @@ services:
     restart: on-failure
     ports:
       - "127.0.0.1:3000:3000"
+    volumes:
+      - ./robots.txt:/app/public/robots.txt
     environment:
       - USERNAME=${MOONTV_USERNAME:?MOONTV_USERNAME is required}
       - PASSWORD=${MOONTV_PASSWORD:?MOONTV_PASSWORD is required}
