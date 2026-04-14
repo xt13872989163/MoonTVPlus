@@ -10,6 +10,7 @@ services:
       - PASSWORD=${MOONTV_PASSWORD:?MOONTV_PASSWORD is required}
       - NEXT_PUBLIC_STORAGE_TYPE=kvrocks
       - KVROCKS_URL=redis://moontv-kvrocks:6666
+      - SITE_BASE=https://www.godshan.cloud
     networks:
       - moontv-network
     depends_on:
