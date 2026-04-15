@@ -1,6 +1,6 @@
 services:
   moontv-core:
-    image: ghcr.io/mtvpls/moontvplus-lite:latest
+    image: ghcr.io/mtvpls/moontvplus:latest
     container_name: moontv-core
     restart: on-failure
     ports:
