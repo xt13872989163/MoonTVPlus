@@ -1,6 +1,8 @@
 services:
   moontv-core:
-    image: ghcr.io/mtvpls/moontvplus:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: moontv-core
     restart: on-failure
     ports:
